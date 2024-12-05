@@ -41,7 +41,7 @@
 
 (defn make-flät [irs]
   (let [ir (dissoc (assoc (last irs) :name "Flæt" :tag :machine) :abstract-machine-name)
-        ir-half (update ir :machine-clauses (partial remove #(= (:tag %) :events)))
+        ir-half (update ir :machine-clauses (partial remove #(#{:events :invariants} (:tag %))))
         invs (apply binvariants (mapcat :values (filter #(= (:tag %) :invariants) (mapcat :machine-clauses (filter #(not= :context (:tag %)) irs)))))
         events (first (filter #(= (:tag %) :events) (:machine-clauses ir)))
         events' (update events :values
