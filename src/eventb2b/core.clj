@@ -9,7 +9,7 @@
   (:import java.io.File)
   (:gen-class))
 
-(defn merge-irs [irs]
+(defn merge-irs [irs & {:keys [generate-enabledness-tests?] :as opts}]
   (bmachine :merged
      (apply bsets
        (map #(apply benumerated-set (:set %) (map first (:partitions %)))
@@ -30,13 +30,21 @@
        (apply bparallel-sub (distinct (mapcat #(:values (s/select-one (CLAUSE :init) %)) irs))) )
      (apply boperations
             (let [ops (group-by :name (mapcat #(:values (s/select-one (CLAUSE :events) %)) irs))]
-              (for [[opname events] ops
-                    :let [evt (last events)]]
-                (bop opname
-                     (list* (:values (first (filter #(= :args (:tag %)) (:clauses evt)))))
-                     (bselect (apply band (:values (first (filter #(= :guards (:tag %)) (:clauses evt)))))
-                              (apply bparallel-sub (:values (first (filter #(= :actions (:tag %)) (:clauses evt))))))))
-              ))))
+              (apply concat
+                     (for [[opname events] ops
+                           :let [evt (last events)]]
+                       (let [guard (apply band (:values (first (filter #(= :guards (:tag %)) (:clauses evt)))))
+                             params (list* (:values (first (filter #(= :args (:tag %)) (:clauses evt)))))
+                             op (bop opname
+                                     params
+                                     (bselect guard
+                                              (apply bparallel-sub (:values (first (filter #(= :actions (:tag %)) (:clauses evt)))))))]
+                         (if generate-enabledness-tests?
+                           [op (bop [:res]
+                                    (keyword (str (name opname) "_ENABLED"))
+                                    params
+                                    (bassign :res (bpred->bool guard)))]
+                           [op]))))))))
 
 
 (defn make-flät [irs]
@@ -53,13 +61,15 @@
 
 (defn -main
   [& args]
-  (when (not= (count args) 2)
-    (println "Usage: java -jar eventb2b-0.1.0-SNAPSHOT-standalone.jar input.bum output.mch")
+  (when (< (count args) 2)
+    (println "Usage: java -jar eventb2b-0.1.0-SNAPSHOT-standalone.jar input.bum output.mch & opts")
+    (println "opts supports:   :generate-enabledness-tests? true/FALSE")
     (System/exit 1))
   (let [[input output] args
         xx (rodin->lisb input)
         irs (map (fn [x] (eval `(eventb ~x))) xx)
-        b (ast->b (ir->ast (merge-irs irs)) :indent "  ")
+        arrgs (map read-string (drop 2 args))
+        b (ast->b (ir->ast (apply merge-irs irs arrgs)) :indent "  ")
         f (file output)]
     (.mkdirs (.getParentFile f))
     (spit f b)
@@ -75,7 +85,7 @@
 (comment 
   "works on my machine"
   (flachmann "/home/philipp/Downloads/Drone_Exercise5/M7_DroneCriticalSafetyDistance_InstFull.bum")
-  (-main "/home/philipp/Downloads/Drone_Exercise5/M7_DroneCriticalSafetyDistance_InstFull.bum" "./foo.mch"))
+  (-main "/home/philipp/Downloads/Drone_Exercise5/M7_DroneCriticalSafetyDistance_InstFull.bum" "./foo2.mch"))
 
 
 
